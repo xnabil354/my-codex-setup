@@ -18,6 +18,7 @@ Run these commands from the bundle folder, in order:
 - Asks whether each detected component should be updated.
 - Installs reusable skills and plugins from the bundle.
 - Preserves unrelated project trust and configuration sections.
+- Installs Node.js LTS before `npm install -g @openai/codex@latest`; uses `winget` when available, otherwise the official Node.js x64 MSI with SHA-256 verification.
 
 ## Security and privacy
 

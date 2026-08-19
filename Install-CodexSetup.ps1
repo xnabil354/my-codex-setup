@@ -62,6 +62,48 @@ function Refresh-Path {
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
 }
+function Install-NodeFallback {
+    $baseUri = 'https://nodejs.org/dist'
+    $tempMsi = Join-Path ([IO.Path]::GetTempPath()) ("node-lts-" + [guid]::NewGuid().ToString('N') + '.msi')
+    try {
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+        Info 'winget tidak tersedia/gagal. Mengambil Node.js LTS dari nodejs.org...'
+        $releases = Invoke-RestMethod -UseBasicParsing -Uri "$baseUri/index.json"
+        $release = @($releases | Where-Object {
+            $_.lts -and @($_.files) -contains 'win-x64-msi'
+        }) | Select-Object -First 1
+        if (-not $release) { throw 'Release Node.js LTS dengan MSI Windows x64 tidak ditemukan.' }
+
+        $version = [string]$release.version
+        if ($version -notmatch '^v\d+\.\d+\.\d+$') { throw "Versi Node.js tidak valid: $version" }
+        $msiName = "node-$version-x64.msi"
+        $releaseUri = "$baseUri/$version"
+        $msiUri = "$releaseUri/$msiName"
+        $hashUri = "$releaseUri/SHASUMS256.txt"
+        Info "Node.js LTS $version dipilih. Mengunduh MSI..."
+        Invoke-WebRequest -UseBasicParsing -Uri $msiUri -OutFile $tempMsi
+        $hashText = (Invoke-WebRequest -UseBasicParsing -Uri $hashUri).Content
+        $hashPattern = '^\s*([0-9a-fA-F]{64})\s+\*?' + [regex]::Escape($msiName) + '\s*$'
+        $hashLine = @($hashText -split '\r?\n' | Where-Object { $_ -match $hashPattern }) | Select-Object -First 1
+        if (-not $hashLine) { throw "Checksum $msiName tidak ditemukan." }
+
+        $expectedHash = ([regex]::Match($hashLine, '^\s*([0-9a-fA-F]{64})')).Groups[1].Value.ToLowerInvariant()
+        $actualHash = (Get-FileHash -LiteralPath $tempMsi -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualHash -ne $expectedHash) { throw 'Checksum MSI Node.js tidak cocok; instalasi dibatalkan.' }
+        Good 'Checksum MSI Node.js cocok.'
+
+        $result = Run 'msiexec.exe' @('/i', $tempMsi, '/qn', '/norestart')
+        if (@(0, 3010) -notcontains $result.ExitCode) {
+            throw "Instalasi Node.js LTS via MSI gagal (exit code $($result.ExitCode))."
+        }
+    }
+    catch {
+        throw "Node.js LTS fallback gagal: $($_.Exception.Message)"
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempMsi) { Remove-Item -LiteralPath $tempMsi -Force -ErrorAction SilentlyContinue }
+    }
+}
 function Ensure-NodeNpm {
     $node = Find-ExecutableCommand 'node'
     $npm = Find-ExecutableCommand 'npm'
@@ -73,16 +115,29 @@ function Ensure-NodeNpm {
         Warn 'Dry-run: Node.js/npm tidak ditemukan; instalasi Node.js LTS dilewati.'
         return $false
     }
+
+    $installed = $false
     $winget = Find-ExecutableCommand 'winget'
-    if (-not $winget) {
-        throw 'Node.js/npm tidak ditemukan dan winget tidak tersedia. Install Node.js LTS lalu jalankan ulang installer.'
+    if ($winget) {
+        Info 'Node.js/npm tidak ditemukan. Menginstal Node.js LTS via winget...'
+        try {
+            $result = Run $winget.Source @('install', '--id', 'OpenJS.NodeJS.LTS', '--exact', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements')
+            if ($result.ExitCode -eq 0) {
+                Refresh-Path
+                $installed = [bool](Find-ExecutableCommand 'node' -and Find-ExecutableCommand 'npm')
+            }
+            if (-not $installed) { Warn 'Instalasi via winget belum menghasilkan node/npm; mencoba installer resmi.' }
+        }
+        catch { Warn 'Instalasi via winget gagal; mencoba installer resmi.' }
     }
-    Info 'Node.js/npm tidak ditemukan. Menginstal Node.js LTS via winget...'
-    $result = Run $winget.Source @('install', '--id', 'OpenJS.NodeJS.LTS', '--exact', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements')
-    if ($result.ExitCode -ne 0) {
-        throw 'Instalasi Node.js LTS gagal. Install Node.js LTS secara manual lalu jalankan ulang installer.'
+    else {
+        Warn 'winget tidak tersedia; memakai installer resmi Node.js.'
     }
-    Refresh-Path
+
+    if (-not $installed) {
+        Install-NodeFallback
+        Refresh-Path
+    }
     $node = Find-ExecutableCommand 'node'
     $npm = Find-ExecutableCommand 'npm'
     if (-not ($node -and $npm)) {

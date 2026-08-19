@@ -60,6 +60,16 @@ try {
     New-Item -ItemType Directory -Path $temp -Force | Out-Null
     Assert-That ((First-Version @('codex-cli 0.147.0')) -lt (First-Version @('latest 0.148.0'))) 'semantic version comparison'
     Assert-That ((Quote-Toml 'C:\Users\friend\.codex\model_catalog.json') -eq '"C:\\Users\\friend\\.codex\\model_catalog.json"') 'TOML Windows path escaping'
+    $nodeReleases = @(
+        [pscustomobject]@{ version = 'v99.1.3'; lts = $false; files = @('win-x64-msi') }
+        [pscustomobject]@{ version = 'v99.1.2'; lts = 'Test LTS'; files = @('win-x64-msi') }
+        [pscustomobject]@{ version = 'v99.1.1'; lts = 'Test LTS'; files = @('win-arm64-msi') }
+    )
+    $nodeRelease = @($nodeReleases | Where-Object { $_.lts -and @($_.files) -contains 'win-x64-msi' }) | Select-Object -First 1
+    Assert-That ($nodeRelease.version -eq 'v99.1.2') 'Node.js LTS MSI selection'
+    $nodeMsiName = "node-$($nodeRelease.version)-x64.msi"
+    $nodeHashLine = ('0' * 64) + '  node-v99.1.2-x64.msi'
+    Assert-That ($nodeHashLine -match ('^\s*[0-9a-fA-F]{64}\s+\*?' + [regex]::Escape($nodeMsiName) + '\s*$')) 'Node.js MSI checksum parsing'
 
     $codexHome = Join-Path $temp 'codex'
     New-Item -ItemType Directory -Path $codexHome -Force | Out-Null
