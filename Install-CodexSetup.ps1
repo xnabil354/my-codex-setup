@@ -31,7 +31,8 @@ function Run([string]$File, [string[]]$Arguments) {
     $ErrorActionPreference = 'Continue'
     try {
         $output = @(& $File @Arguments 2>&1)
-        $exitCode = [int]$LASTEXITCODE
+        $nativeExitCode = Get-Variable LASTEXITCODE -ValueOnly -ErrorAction SilentlyContinue
+        $exitCode = if ($null -eq $nativeExitCode) { 1 } else { [int]$nativeExitCode }
     }
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
@@ -92,9 +93,11 @@ function Install-NodeFallback {
         if ($actualHash -ne $expectedHash) { throw 'Checksum MSI Node.js tidak cocok; instalasi dibatalkan.' }
         Good 'Checksum MSI Node.js cocok.'
 
-        $result = Run 'msiexec.exe' @('/i', $tempMsi, '/qn', '/norestart')
-        if (@(0, 3010) -notcontains $result.ExitCode) {
-            throw "Instalasi Node.js LTS via MSI gagal (exit code $($result.ExitCode))."
+        $msiexec = Join-Path $env:WINDIR 'System32\msiexec.exe'
+        if (-not (Test-Path -LiteralPath $msiexec)) { throw 'msiexec.exe tidak ditemukan.' }
+        $installer = Start-Process -FilePath $msiexec -ArgumentList @('/i', "`"$tempMsi`"", '/qn', '/norestart') -Wait -PassThru -WindowStyle Hidden
+        if (@(0, 3010) -notcontains $installer.ExitCode) {
+            throw "Instalasi Node.js LTS via MSI gagal (exit code $($installer.ExitCode))."
         }
     }
     catch {
