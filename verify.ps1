@@ -6,6 +6,10 @@ $ErrorActionPreference = 'Continue'
 $HomeDir = [Environment]::GetFolderPath('UserProfile')
 $CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HomeDir '.codex' }
 $Issues = New-Object 'System.Collections.Generic.List[string]'
+foreach ($name in @('NINEROUTER_API_KEY', 'STITCH_API_KEY', 'TESTSPRITE_API_KEY', 'TESTSPRITE_USERNAME')) {
+    $value = [Environment]::GetEnvironmentVariable($name, 'User')
+    if ($value) { [Environment]::SetEnvironmentVariable($name, $value, 'Process') }
+}
 
 function Out([string]$Message) { if (-not $Quiet) { Write-Host $Message } }
 function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
@@ -62,7 +66,8 @@ foreach ($name in @('antislop', 'brainstorming', 'ponytail')) {
 }
 
 $routerKey = [Environment]::GetEnvironmentVariable('NINEROUTER_API_KEY', 'User')
-Check 'credential NINEROUTER_API_KEY' (-not [string]::IsNullOrWhiteSpace($routerKey)) 'required'
+Check 'credential NINEROUTER_API_KEY' (-not [string]::IsNullOrWhiteSpace($routerKey)) 'user profile'
+if ($routerKey) { Out '[ OK ] NINEROUTER_API_KEY loaded into verifier process' }
 if ($configRaw -match '\[mcp_servers\.stitch\]') {
     $stitchKey = [Environment]::GetEnvironmentVariable('STITCH_API_KEY', 'User')
     Check 'credential STITCH_API_KEY' (-not [string]::IsNullOrWhiteSpace($stitchKey)) 'configured MCP'

@@ -62,6 +62,35 @@ function Refresh-Path {
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
 }
+function Ensure-NodeNpm {
+    $node = Find-ExecutableCommand 'node'
+    $npm = Find-ExecutableCommand 'npm'
+    if ($node -and $npm) {
+        Info "Node.js/npm tersedia: $($node.Source)"
+        return $true
+    }
+    if ($DryRun) {
+        Warn 'Dry-run: Node.js/npm tidak ditemukan; instalasi Node.js LTS dilewati.'
+        return $false
+    }
+    $winget = Find-ExecutableCommand 'winget'
+    if (-not $winget) {
+        throw 'Node.js/npm tidak ditemukan dan winget tidak tersedia. Install Node.js LTS lalu jalankan ulang installer.'
+    }
+    Info 'Node.js/npm tidak ditemukan. Menginstal Node.js LTS via winget...'
+    $result = Run $winget.Source @('install', '--id', 'OpenJS.NodeJS.LTS', '--exact', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements')
+    if ($result.ExitCode -ne 0) {
+        throw 'Instalasi Node.js LTS gagal. Install Node.js LTS secara manual lalu jalankan ulang installer.'
+    }
+    Refresh-Path
+    $node = Find-ExecutableCommand 'node'
+    $npm = Find-ExecutableCommand 'npm'
+    if (-not ($node -and $npm)) {
+        throw 'Node.js terpasang tetapi node/npm belum masuk PATH. Tutup PowerShell, buka kembali, lalu jalankan installer lagi.'
+    }
+    Good "Node.js/npm siap: $($node.Source)"
+    return $true
+}
 function Read-Secret([string]$Prompt, [bool]$Required) {
     while ($true) {
         if ($NonInteractive) { return $null }
@@ -69,6 +98,7 @@ function Read-Secret([string]$Prompt, [bool]$Required) {
         $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
         try { $value = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
         finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+        if ($null -ne $value) { $value = $value.Trim() }
         if ($Required -and [string]::IsNullOrWhiteSpace($value)) {
             Warn 'Nilai wajib diisi.'
             continue
@@ -76,14 +106,52 @@ function Read-Secret([string]$Prompt, [bool]$Required) {
         return $value
     }
 }
+function Mask-Secret([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '<kosong>' }
+    return "panjang=$($Value.Length)"
+}
+function Confirm-Secret([string]$Name, [string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        Warn "${Name}: API key kosong."
+        return $false
+    }
+    if ($DryRun) {
+        Info "${Name}: diterima ($(Mask-Secret $Value)); dry-run tidak menyimpan."
+        return $true
+    }
+    $user = [Environment]::GetEnvironmentVariable($Name, 'User')
+    $process = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    if ($user -eq $Value -and $process -eq $Value) {
+        Good "${Name}: terdeteksi dan tersimpan ($(Mask-Secret $Value))."
+        return $true
+    }
+    Warn "${Name}: input diterima, tetapi tidak terbaca dari environment user/process."
+    return $false
+}
 function Get-Secret([string]$Name, [bool]$Required) {
     $value = [Environment]::GetEnvironmentVariable($Name, 'User')
     if (-not $value) { $value = [Environment]::GetEnvironmentVariable($Name, 'Process') }
-    if ($value -and (Ask "$Name sudah ada. Pertahankan?" 'Y') -eq 'Y') { return $value }
-    $value = Read-Secret "Masukkan $Name (Enter untuk melewati)" $Required
+    if ($value -and (Ask "$Name sudah ada. Pertahankan?" 'Y') -eq 'Y') {
+        if (-not $DryRun) {
+            [Environment]::SetEnvironmentVariable($Name, $value, 'User')
+            [Environment]::SetEnvironmentVariable($Name, $value, 'Process')
+        }
+        $confirmed = Confirm-Secret $Name $value
+        if ($Required -and -not $confirmed -and -not $DryRun) {
+            throw "$Name tidak berhasil disimpan ke user environment."
+        }
+        return $value
+    }
+    $value = Read-Secret "Masukkan $Name (paste, Enter untuk melewati)" $Required
     if ($value -and -not $DryRun) {
         [Environment]::SetEnvironmentVariable($Name, $value, 'User')
         [Environment]::SetEnvironmentVariable($Name, $value, 'Process')
+    }
+    if ($value) {
+        $confirmed = Confirm-Secret $Name $value
+        if ($Required -and -not $confirmed -and -not $DryRun) {
+            throw "$Name tidak berhasil disimpan ke user environment."
+        }
     }
     return $value
 }
@@ -352,9 +420,11 @@ function Install-CLI([object]$Info) {
     $npm = Find-ExecutableCommand 'npm'
     if (-not $Info.Found) {
         if (-not $npm) {
-            Warn 'Codex CLI belum ada dan npm tidak ditemukan.'
-            Add-Result 'Codex CLI' 'failed' 'npm missing'
-            return
+            if ($DryRun) {
+                Add-Result 'Codex CLI' 'dry-run' 'Node.js/npm missing'
+                return
+            }
+            throw 'Node.js/npm tidak tersedia. Instalasi Codex CLI dibatalkan.'
         }
         if ((Ask 'Codex CLI belum ada. Install latest?' 'Y') -eq 'Y' -and -not $DryRun) {
             $result = Run $npm.Source @('install', '-g', '@openai/codex@latest')
@@ -369,8 +439,11 @@ function Install-CLI([object]$Info) {
     }
     Info "Codex CLI: $($Info.Version) via $($Info.Method); latest: $(if ($Info.Latest) { $Info.Latest } else { 'unavailable' })"
     if (-not $npm) {
-        Add-Result 'Codex CLI' 'kept' ([string]$Info.Version)
-        return
+        if ($DryRun) {
+            Add-Result 'Codex CLI' 'dry-run' 'Node.js/npm missing'
+            return
+        }
+        throw 'Node.js/npm tidak tersedia. Instalasi Codex CLI dibatalkan.'
     }
     $shouldUpdate = -not $SkipUpdates -and $Info.Latest -and $Info.Version -and $Info.Latest -gt $Info.Version
     if ($shouldUpdate -and (Ask 'Update Codex CLI ke latest?' 'N') -eq 'Y' -and -not $DryRun) {
@@ -501,6 +574,7 @@ function Verify-Setup {
 
 if (-not (Test-Path -LiteralPath $Snapshot)) { throw 'Snapshot tidak ditemukan. Jalankan Build-CodexBundle.ps1 dahulu.' }
 Write-Host '=== Codex Vibe Setup ===' -ForegroundColor White
+[void](Ensure-NodeNpm)
 $cli = Get-CliInfo
 $vs = Get-VsCodeInfo
 if ($cli.Found) { Info "Codex CLI terdeteksi: $($cli.Path)" } else { Warn 'Codex CLI tidak terdeteksi.' }
@@ -543,7 +617,10 @@ Add-Result 'Config' $(if ($DryRun) { 'dry-run' } else { 'written' }) $config
 Add-Result 'Skills' $(if ($DryRun) { 'dry-run' } else { 'installed' }) ''
 Verify-Setup
 $Results | Format-Table -AutoSize
-if (-not $DryRun) { Good 'Setup selesai. Tutup/buka VS Code dan buat thread Codex baru.' }
+if (-not $DryRun) {
+    Good 'Setup selesai.'
+    Warn 'Tutup semua jendela VS Code, buka kembali, lalu buat thread Codex baru agar API key terbaca.'
+}
 
 
 
