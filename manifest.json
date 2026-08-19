@@ -1,0 +1,95 @@
+{
+    "bundleVersion":  "1.0.0",
+    "createdAtUtc":  "2026-08-19T06:06:14.0445241Z",
+    "sourceCodexVersion":  "codex-cli 0.147.0",
+    "model":  "hemat",
+    "provider":  "9router",
+    "skills":  [
+                   "antislop",
+                   "antislop-copywriting",
+                   "antislop-human",
+                   "antislop-layoutmobile",
+                   "antislop-ui",
+                   "brainstorming",
+                   "codebase-design",
+                   "design-taste-frontend",
+                   "domain-modeling",
+                   "find-skills",
+                   "gpt-taste",
+                   "handoff",
+                   "higgsfield-generate",
+                   "humanizer",
+                   "impeccable",
+                   "improve-codebase-architecture",
+                   "minimalist-ui",
+                   "officecli",
+                   "ponytail",
+                   "prototype",
+                   "research",
+                   "resolving-merge-conflicts",
+                   "scroll-world",
+                   "setup-matt-pocock-skills",
+                   "to-questionnaire",
+                   "to-spec",
+                   "ui-ux-pro-max"
+               ],
+    "plugins":  [
+                    {
+                        "marketplace":  "openai-primary-runtime",
+                        "name":  "documents",
+                        "version":  "26.601.10930"
+                    },
+                    {
+                        "marketplace":  "openai-primary-runtime",
+                        "name":  "spreadsheets",
+                        "version":  "26.601.10930"
+                    },
+                    {
+                        "marketplace":  "openai-primary-runtime",
+                        "name":  "presentations",
+                        "version":  "26.601.10930"
+                    },
+                    {
+                        "marketplace":  "codex-vibe-curated",
+                        "name":  "github",
+                        "version":  "0.1.6"
+                    },
+                    {
+                        "marketplace":  "codex-vibe-curated",
+                        "name":  "gmail",
+                        "version":  "0.1.3"
+                    },
+                    {
+                        "marketplace":  "codex-vibe-curated",
+                        "name":  "google-calendar",
+                        "version":  "1.2.3"
+                    },
+                    {
+                        "marketplace":  "codex-vibe-curated",
+                        "name":  "google-drive",
+                        "version":  "0.1.7"
+                    },
+                    {
+                        "marketplace":  "codex-vibe-bundled",
+                        "name":  "browser",
+                        "version":  "26.602.40724"
+                    },
+                    {
+                        "marketplace":  "codex-vibe-bundled",
+                        "name":  "sites",
+                        "version":  "0.1.12"
+                    }
+                ],
+    "includesOfficeCli":  true,
+    "includesChromeRuntime":  true,
+    "containsSecrets":  false,
+    "excludes":  [
+                     "auth.json",
+                     "sessions",
+                     "history",
+                     "*.sqlite",
+                     "logs",
+                     "project trust paths",
+                     "API keys"
+                 ]
+}
