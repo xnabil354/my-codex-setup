@@ -16,8 +16,8 @@ $BackupStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $Results = New-Object 'System.Collections.Generic.List[object]'
 $PluginSet = [ordered]@{
     'openai-primary-runtime' = @('documents', 'spreadsheets', 'presentations')
-    'codex-vibe-curated' = @('github', 'gmail', 'google-calendar', 'google-drive')
-    'codex-vibe-bundled' = @('browser', 'sites')
+    'codex-vibe-curated'     = @('github', 'gmail', 'google-calendar', 'google-drive')
+    'codex-vibe-bundled'     = @('browser', 'sites')
 }
 
 function Add-Result([string]$Component, [string]$Status, [string]$Detail = '') {
@@ -27,8 +27,16 @@ function Info([string]$Message) { Write-Host "[INFO] $Message" -ForegroundColor 
 function Good([string]$Message) { Write-Host "[ OK ] $Message" -ForegroundColor Green }
 function Warn([string]$Message) { Write-Host "[WARN] $Message" -ForegroundColor Yellow }
 function Run([string]$File, [string[]]$Arguments) {
-    $output = @(& $File @Arguments 2>&1)
-    [pscustomobject]@{ ExitCode = [int]$LASTEXITCODE; Output = $output }
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = @(& $File @Arguments 2>&1)
+        $exitCode = [int]$LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
 }
 function First-Version([object[]]$Lines) {
     foreach ($line in $Lines) {
@@ -109,9 +117,9 @@ function Find-CodeCommand {
         if ($command) { return $command }
     }
     foreach ($path in @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd')
-    )) {
+            (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd')
+        )) {
         if (Test-Path -LiteralPath $path) {
             $command = Get-Command $path -ErrorAction SilentlyContinue
             if ($command) { return $command }
@@ -133,7 +141,8 @@ function Get-CliInfo {
         try {
             $json = ($npmResult.Output -join "`n") | ConvertFrom-Json
             if ($json.dependencies.'@openai/codex') { $method = 'npm' }
-        } catch { }
+        }
+        catch { }
     }
     $latest = $null
     if ($npm -and -not $SkipUpdates) {
@@ -149,9 +158,9 @@ function Get-VsCodeInfo {
     if ($command) {
         $extensionResult = Run $command.Source @('--list-extensions', '--show-versions')
         $extensions = @($extensionResult.Output) |
-            ForEach-Object { [string]$_ } |
-            Where-Object { $_ -match '^(openai\.(chatgpt|codex))@(.+)$' } |
-            Select-Object -First 1
+        ForEach-Object { [string]$_ } |
+        Where-Object { $_ -match '^(openai\.(chatgpt|codex))@(.+)$' } |
+        Select-Object -First 1
         if ($extensions -and $extensions[0] -match '^(openai\.(chatgpt|codex))@(.+)$') {
             $extensionId = $Matches[1]
             $extensionVersion = $Matches[2]
@@ -159,13 +168,13 @@ function Get-VsCodeInfo {
     }
     if (-not $extensionId) {
         foreach ($root in @(
-            (Join-Path $HomeDir '.vscode\extensions'),
-            (Join-Path $HomeDir '.vscode-insiders\extensions')
-        )) {
+                (Join-Path $HomeDir '.vscode\extensions'),
+                (Join-Path $HomeDir '.vscode-insiders\extensions')
+            )) {
             $extension = Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -match '^(openai\.(chatgpt|codex))-(.+)$' } |
-                Sort-Object LastWriteTime -Descending |
-                Select-Object -First 1
+            Where-Object { $_.Name -match '^(openai\.(chatgpt|codex))-(.+)$' } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
             if ($extension -and $extension.Name -match '^(openai\.(chatgpt|codex))-(.+)$') {
                 $extensionId = $Matches[1]
                 $extensionVersion = $Matches[3]
@@ -176,10 +185,10 @@ function Get-VsCodeInfo {
     $version = $null
     if ($command) { $versionResult = Run $command.Source @('--version'); $version = First-Version $versionResult.Output }
     return [pscustomobject]@{
-        Found = [bool]($command -or $extensionId)
-        Path = if ($command) { $command.Source } else { $null }
-        Version = $version
-        ExtensionId = $extensionId
+        Found            = [bool]($command -or $extensionId)
+        Path             = if ($command) { $command.Source } else { $null }
+        Version          = $version
+        ExtensionId      = $extensionId
         ExtensionVersion = $extensionVersion
     }
 }
@@ -320,8 +329,8 @@ function Find-NodeRepl {
     $root = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\runtimes\cua_node'
     if (-not (Test-Path -LiteralPath $root)) { return $null }
     return Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'node_repl.exe' -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1 -ExpandProperty FullName
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
 }
 function Ensure-Office {
     $command = Get-Command officecli -ErrorAction SilentlyContinue
@@ -352,7 +361,8 @@ function Install-CLI([object]$Info) {
             if ($result.ExitCode -ne 0) { throw 'Codex CLI install gagal.' }
             Refresh-Path
             Add-Result 'Codex CLI' 'installed' 'latest'
-        } else {
+        }
+        else {
             Add-Result 'Codex CLI' 'skipped' 'declined/dry-run'
         }
         return
@@ -368,11 +378,13 @@ function Install-CLI([object]$Info) {
         if ($result.ExitCode -eq 0) {
             Refresh-Path
             Add-Result 'Codex CLI' 'updated' 'latest'
-        } else {
+        }
+        else {
             Warn 'Update Codex CLI gagal; versi lama dipertahankan.'
             Add-Result 'Codex CLI' 'kept' ([string]$Info.Version)
         }
-    } else {
+    }
+    else {
         Add-Result 'Codex CLI' 'kept' ([string]$Info.Version)
     }
 }
@@ -392,7 +404,8 @@ function Install-Extension([object]$Info) {
         if ((Ask 'Codex extension belum ada. Install openai.chatgpt?' 'Y') -eq 'Y' -and -not $DryRun) {
             $result = Run $Info.Path @('--install-extension', 'openai.chatgpt', '--force')
             Add-Result 'VS Code extension' $(if ($result.ExitCode -eq 0) { 'installed' } else { 'failed' }) 'openai.chatgpt'
-        } else {
+        }
+        else {
             Add-Result 'VS Code extension' 'skipped' 'declined/dry-run'
         }
         return
@@ -401,7 +414,8 @@ function Install-Extension([object]$Info) {
     if (-not $SkipUpdates -and (Ask 'Update Codex extension ke latest?' 'N') -eq 'Y' -and -not $DryRun) {
         $result = Run $Info.Path @('--install-extension', $Info.ExtensionId, '--force')
         Add-Result 'VS Code extension' $(if ($result.ExitCode -eq 0) { 'updated' } else { 'failed' }) $Info.ExtensionId
-    } else {
+    }
+    else {
         Add-Result 'VS Code extension' 'kept' "$($Info.ExtensionId) $($Info.ExtensionVersion)"
     }
 }
@@ -430,7 +444,8 @@ function Install-Plugins([string]$Marketplaces) {
         $addMarketplace = Run $command.Source @('plugin', 'marketplace', 'add', $source)
         if ($addMarketplace.ExitCode -eq 0) {
             Add-Result "Marketplace $marketplace" 'configured' ''
-        } else {
+        }
+        else {
             Warn "Marketplace $marketplace sudah ada atau gagal dikonfigurasi; plugin tetap dicoba."
             Add-Result "Marketplace $marketplace" 'kept/warn' ''
         }
@@ -439,7 +454,8 @@ function Install-Plugins([string]$Marketplaces) {
             $result = Run $command.Source @('plugin', 'add', $selector)
             if ($result.ExitCode -eq 0) {
                 Add-Result "Plugin $selector" 'installed/enabled' ''
-            } else {
+            }
+            else {
                 Warn "Plugin $selector gagal dipasang atau sudah terpasang; lanjut."
                 Add-Result "Plugin $selector" 'kept/warn' ''
             }
@@ -467,11 +483,11 @@ function Verify-Setup {
         return
     }
     foreach ($args in @(
-        @('--version'),
-        @('doctor'),
-        @('mcp', 'list'),
-        @('plugin', 'list')
-    )) {
+            @('--version'),
+            @('doctor'),
+            @('mcp', 'list'),
+            @('plugin', 'list')
+        )) {
         $result = Run $command.Source $args
         $name = if ($args.Count -eq 1) { $args[0] } else { $args -join ' ' }
         Add-Result "codex $name" $(if ($result.ExitCode -eq 0) { 'ok' } else { 'warn' }) ''
