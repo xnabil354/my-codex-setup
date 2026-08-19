@@ -18,7 +18,8 @@ Run these commands from the bundle folder, in order:
 - Asks whether each detected component should be updated.
 - Installs reusable skills and plugins from the bundle.
 - Preserves unrelated project trust and configuration sections.
-- Installs Node.js LTS before `npm install -g @openai/codex@latest`; uses `winget` when available, otherwise the official Node.js x64 MSI with SHA-256 verification.
+- Checks Node.js and npm first. If both already exist, asks whether to update Node.js LTS (`Y`) or skip (`N`); if either is missing, installs Node.js LTS using `winget` or the official Node.js x64 MSI with SHA-256 verification.
+- Accepts API-key paste in PowerShell, CMD, Windows Terminal, or Bash. Use the terminal's normal paste shortcut, right-click, `Shift+Insert`, or type `CLIPBOARD` to read the current clipboard.
 
 ## Security and privacy
 

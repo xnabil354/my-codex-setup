@@ -112,6 +112,11 @@ try {
     Assert-That ($raw -notmatch 'model = "old"|old = true|duplicate|old router|old node') 'old managed values removed'
 
     $bundleRoot = $PSScriptRoot
+    $installerText = Get-Content -LiteralPath (Join-Path $bundleRoot 'Install-CodexSetup.ps1') -Raw
+    $nodeBlock = [regex]::Match($installerText, '(?s)function Ensure-NodeNpm \{.*?(?=function Read-Secret)').Value
+    Assert-That ($nodeBlock.Contains("Ask 'Node.js sudah ada. Update Node.js ke LTS terbaru?' 'N'")) 'existing Node.js/npm asks before update with N default'
+    Assert-That ($nodeBlock -match '(?s)\$update -eq ''Y''.*?Install-NodeFallback') 'Node.js fallback update is inside Y branch'
+    Assert-That ($installerText.Contains('Ctrl+V') -and $installerText.Contains('Ctrl+Shift+V') -and $installerText.Contains('Shift+Insert') -and $installerText.Contains('Get-Clipboard')) 'API-key paste shortcuts and clipboard fallback'
     $textExtensions = @('.ps1', '.cmd', '.md', '.json', '.toml', '.txt', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.py', '.sh', '.html', '.css', '.csv', '.xml', '.ini')
     $files = @(
         Get-ChildItem -LiteralPath (Join-Path $bundleRoot 'snapshot'), (Join-Path $bundleRoot 'templates') -Recurse -File -Force

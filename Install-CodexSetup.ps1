@@ -108,10 +108,54 @@ function Install-NodeFallback {
     }
 }
 function Ensure-NodeNpm {
+    Refresh-Path
     $node = Find-ExecutableCommand 'node'
     $npm = Find-ExecutableCommand 'npm'
     if ($node -and $npm) {
-        Info "Node.js/npm tersedia: $($node.Source)"
+        $nodeVersion = First-Version (Run $node.Source @('--version')).Output
+        $npmVersion = First-Version (Run $npm.Source @('--version')).Output
+        Info "Node.js/npm sudah tersedia: node $(if ($nodeVersion) { $nodeVersion } else { 'versi tidak terbaca' }), npm $(if ($npmVersion) { $npmVersion } else { 'versi tidak terbaca' })"
+        $update = if ($SkipUpdates) { 'N' } else { Ask 'Node.js sudah ada. Update Node.js ke LTS terbaru?' 'N' }
+        if ($update -eq 'Y') {
+            if ($DryRun) {
+                Info 'Dry-run: update Node.js dilewati.'
+                return $true
+            }
+            $updated = $false
+            $updateFailed = $false
+            $winget = Find-ExecutableCommand 'winget'
+            if ($winget) {
+                Info 'Mengupdate Node.js LTS via winget...'
+                try {
+                    $result = Run $winget.Source @('upgrade', '--id', 'OpenJS.NodeJS.LTS', '--exact', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements')
+                    $updated = $result.ExitCode -eq 0
+                }
+                catch { Warn 'Update via winget gagal; mencoba installer resmi Node.js.' }
+            }
+            if (-not $updated) {
+                Warn 'Update via winget tidak berhasil; memakai installer resmi Node.js.'
+                try { Install-NodeFallback; $updated = $true }
+                catch { $updateFailed = $true; Warn "Update Node.js gagal; versi yang sudah ada dipertahankan: $($_.Exception.Message)" }
+            }
+            Refresh-Path
+            $node = Find-ExecutableCommand 'node'
+            $npm = Find-ExecutableCommand 'npm'
+            if (-not ($node -and $npm)) {
+                throw 'Update Node.js selesai tetapi node/npm belum masuk PATH. Tutup PowerShell, buka kembali, lalu jalankan installer lagi.'
+            }
+            if ($updateFailed) {
+                Info 'Node.js/npm tetap memakai versi yang sudah ada.'
+            }
+            else {
+                Good 'Node.js/npm siap setelah pemeriksaan/update.'
+            }
+        }
+        elseif ($SkipUpdates) {
+            Info 'SkipUpdates aktif; update Node.js/npm dilewati.'
+        }
+        else {
+            Info 'Node.js/npm sudah ada; update dilewati.'
+        }
         return $true
     }
     if ($DryRun) {
@@ -152,11 +196,18 @@ function Ensure-NodeNpm {
 function Read-Secret([string]$Prompt, [bool]$Required) {
     while ($true) {
         if ($NonInteractive) { return $null }
-        $secure = Read-Host $Prompt -AsSecureString
+        $secure = Read-Host "$Prompt (paste: Ctrl+V, Ctrl+Shift+V, Shift+Insert, klik kanan, atau ketik CLIPBOARD)" -AsSecureString
         $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
         try { $value = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
         finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
         if ($null -ne $value) { $value = $value.Trim() }
+        if ($value -and [string]::Equals($value, 'CLIPBOARD', [StringComparison]::OrdinalIgnoreCase)) {
+            try {
+                $clipboard = Get-Clipboard -Raw -ErrorAction Stop
+                $value = if ($null -ne $clipboard) { $clipboard.Trim() } else { '' }
+            }
+            catch { Warn 'Clipboard tidak dapat dibaca. Coba paste langsung dengan Ctrl+V atau klik kanan.'; $value = '' }
+        }
         if ($Required -and [string]::IsNullOrWhiteSpace($value)) {
             Warn 'Nilai wajib diisi.'
             continue
