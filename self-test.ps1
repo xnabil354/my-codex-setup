@@ -117,6 +117,8 @@ try {
     Assert-That ($nodeBlock.Contains("Ask 'Node.js sudah ada. Update Node.js ke LTS terbaru?' 'N'")) 'existing Node.js/npm asks before update with N default'
     Assert-That ($nodeBlock -match '(?s)\$update -eq ''Y''.*?Install-NodeFallback') 'Node.js fallback update is inside Y branch'
     Assert-That ($installerText.Contains('Ctrl+V') -and $installerText.Contains('Ctrl+Shift+V') -and $installerText.Contains('Shift+Insert') -and $installerText.Contains('Get-Clipboard')) 'API-key paste shortcuts and clipboard fallback'
+    Assert-That ($installerText.Contains('function Select-Credentials') -and $installerText.Contains("MCP TestSprite API key")) 'credential selection menu exists'
+    Assert-That ($installerText.Contains("Get-Secret 'NINEROUTER_API_KEY' `$true `$true") -and $installerText.Contains("Get-Secret 'STITCH_API_KEY' `$false `$true") -and $installerText.Contains("Get-Secret 'TESTSPRITE_API_KEY' `$false `$true")) 'menu replaces selected credentials'
     $textExtensions = @('.ps1', '.cmd', '.md', '.json', '.toml', '.txt', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.py', '.sh', '.html', '.css', '.csv', '.xml', '.ini')
     $files = @(
         Get-ChildItem -LiteralPath (Join-Path $bundleRoot 'snapshot'), (Join-Path $bundleRoot 'templates') -Recurse -File -Force
