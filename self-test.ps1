@@ -116,9 +116,14 @@ try {
     $nodeBlock = [regex]::Match($installerText, '(?s)function Ensure-NodeNpm \{.*?(?=function Read-Secret)').Value
     Assert-That ($nodeBlock.Contains("Ask 'Node.js sudah ada. Update Node.js ke LTS terbaru?' 'N'")) 'existing Node.js/npm asks before update with N default'
     Assert-That ($nodeBlock -match '(?s)\$update -eq ''Y''.*?Install-NodeFallback') 'Node.js fallback update is inside Y branch'
-    Assert-That ($installerText.Contains('Ctrl+V') -and $installerText.Contains('Ctrl+Shift+V') -and $installerText.Contains('Shift+Insert') -and $installerText.Contains('Get-Clipboard')) 'API-key paste shortcuts and clipboard fallback'
-    Assert-That ($installerText.Contains('function Select-Credentials') -and $installerText.Contains("MCP TestSprite API key")) 'credential selection menu exists'
-    Assert-That ($installerText.Contains("Get-Secret 'NINEROUTER_API_KEY' `$true `$true") -and $installerText.Contains("Get-Secret 'STITCH_API_KEY' `$false `$true") -and $installerText.Contains("Get-Secret 'TESTSPRITE_API_KEY' `$false `$true")) 'menu replaces selected credentials'
+    Assert-That ($installerText.Contains('Ctrl+V') -and $installerText.Contains('Ctrl+Shift+V') -and $installerText.Contains('Shift+Insert') -and $installerText.Contains('Get-Clipboard')) 'installer API-key paste shortcuts and clipboard fallback'
+    Assert-That (-not $installerText.Contains('function Select-Credentials')) 'installer has no credential replacement menu'
+    $credentialManager = Get-Content -LiteralPath (Join-Path $bundleRoot 'Manage-CodexCredentials.ps1') -Raw
+    $credentialManagerCmd = Get-Content -LiteralPath (Join-Path $bundleRoot 'Manage-CodexCredentials.cmd') -Raw
+    Assert-That ($credentialManager.Contains('NINEROUTER_API_KEY') -and $credentialManager.Contains('STITCH_API_KEY') -and $credentialManager.Contains('TESTSPRITE_API_KEY')) 'standalone credential menu contains all keys'
+    Assert-That ($credentialManager.Contains('Ctrl+V') -and $credentialManager.Contains('Ctrl+Shift+V') -and $credentialManager.Contains('Shift+Insert') -and $credentialManager.Contains('Get-Clipboard')) 'standalone API-key paste shortcuts and clipboard fallback'
+    Assert-That ($credentialManagerCmd.Contains('Manage-CodexCredentials.ps1')) 'CMD wrapper launches standalone credential manager'
+    Assert-That (-not ($credentialManager -match '(?i)Install-CodexSetup|winget|Start-Process|npx|npm install|npm i')) 'credential manager does not install dependencies'
     $textExtensions = @('.ps1', '.cmd', '.md', '.json', '.toml', '.txt', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.py', '.sh', '.html', '.css', '.csv', '.xml', '.ini')
     $files = @(
         Get-ChildItem -LiteralPath (Join-Path $bundleRoot 'snapshot'), (Join-Path $bundleRoot 'templates') -Recurse -File -Force

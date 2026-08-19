@@ -242,22 +242,13 @@ function Get-CurrentSecret([string]$Name) {
     if (-not $value) { $value = [Environment]::GetEnvironmentVariable($Name, 'Process') }
     return $value
 }
-function Get-Secret([string]$Name, [bool]$Required, [bool]$Replace = $false) {
+function Get-Secret([string]$Name, [bool]$Required) {
     $existingValue = Get-CurrentSecret $Name
-    if (-not $Replace -and $existingValue -and (Ask "$Name sudah ada. Pertahankan?" 'Y') -eq 'Y') {
-        if (-not $DryRun) {
-            [Environment]::SetEnvironmentVariable($Name, $existingValue, 'User')
-            [Environment]::SetEnvironmentVariable($Name, $existingValue, 'Process')
-        }
-        $confirmed = Confirm-Secret $Name $existingValue
-        if ($Required -and -not $confirmed -and -not $DryRun) {
-            throw "$Name tidak berhasil disimpan ke user environment."
-        }
+    if ($existingValue) {
+        Info "$Name sudah ada; dipertahankan ($(Mask-Secret $existingValue))."
         return $existingValue
     }
-    $prompt = if ($Replace) { "Masukkan $Name terbaru" } else { "Masukkan $Name (Enter untuk melewati)" }
-    $value = Read-Secret $prompt $Required
-    if ($Replace -and [string]::IsNullOrWhiteSpace($value) -and $existingValue) { return $existingValue }
+    $value = Read-Secret "Masukkan $Name" $Required
     if ($value -and -not $DryRun) {
         [Environment]::SetEnvironmentVariable($Name, $value, 'User')
         [Environment]::SetEnvironmentVariable($Name, $value, 'Process')
@@ -269,42 +260,6 @@ function Get-Secret([string]$Name, [bool]$Required, [bool]$Replace = $false) {
         }
     }
     return $value
-}
-function Select-Credentials {
-    if ($NonInteractive) {
-        return [pscustomobject]@{
-            Router = Get-Secret 'NINEROUTER_API_KEY' $true
-            Stitch = Get-Secret 'STITCH_API_KEY' $false
-            Test   = Get-Secret 'TESTSPRITE_API_KEY' $false
-        }
-    }
-    $router = Get-CurrentSecret 'NINEROUTER_API_KEY'
-    $stitch = Get-CurrentSecret 'STITCH_API_KEY'
-    $test = Get-CurrentSecret 'TESTSPRITE_API_KEY'
-    $done = $false
-    while (-not $done) {
-        $routerStatus = if ([string]::IsNullOrWhiteSpace($router)) { 'belum ada' } else { 'tersimpan' }
-        $stitchStatus = if ([string]::IsNullOrWhiteSpace($stitch)) { 'belum ada' } else { 'tersimpan' }
-        $testStatus = if ([string]::IsNullOrWhiteSpace($test)) { 'belum ada' } else { 'tersimpan' }
-        Write-Host ''
-        Write-Host '=== Credential / MCP API key ===' -ForegroundColor White
-        Write-Host 'Pilih key yang ingin diinput atau diganti. Pilihan dapat diulang.'
-        Write-Host "1. 9Router API key [$routerStatus]"
-        Write-Host "2. MCP Stitch API key [$stitchStatus]"
-        Write-Host "3. MCP TestSprite API key [$testStatus]"
-        Write-Host '4. Selesai, gunakan key yang tersimpan'
-        $choice = Read-Host 'Pilih [1-4]'
-        if ($null -eq $choice) { $choice = '' } else { $choice = $choice.Trim() }
-        switch ($choice) {
-            '1' { $router = Get-Secret 'NINEROUTER_API_KEY' $true $true }
-            '2' { $stitch = Get-Secret 'STITCH_API_KEY' $false $true }
-            '3' { $test = Get-Secret 'TESTSPRITE_API_KEY' $false $true }
-            '4' { $done = $true }
-            default { Warn 'Pilihan tidak valid. Masukkan 1, 2, 3, atau 4.' }
-        }
-    }
-    if (-not $router) { $router = Get-Secret 'NINEROUTER_API_KEY' $true }
-    return [pscustomobject]@{ Router = $router; Stitch = $stitch; Test = $test }
 }
 function Backup([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
@@ -732,10 +687,10 @@ if ($cli.Found) { Info "Codex CLI terdeteksi: $($cli.Path)" } else { Warn 'Codex
 if ($vs.Found) { Info "VS Code terdeteksi: $($vs.Path)" } else { Warn 'VS Code tidak terdeteksi.' }
 Install-CLI $cli
 Install-Extension $vs
-$credentials = Select-Credentials
-$router = $credentials.Router
-$stitch = $credentials.Stitch
-$test = $credentials.Test
+$router = Get-CurrentSecret 'NINEROUTER_API_KEY'
+$stitch = Get-CurrentSecret 'STITCH_API_KEY'
+$test = Get-CurrentSecret 'TESTSPRITE_API_KEY'
+if (-not $router) { $router = Get-Secret 'NINEROUTER_API_KEY' $true }
 $testUser = if ($test) {
     $storedTestUser = Get-CurrentSecret 'TESTSPRITE_USERNAME'
     if ($storedTestUser) { $storedTestUser } else { Get-Secret 'TESTSPRITE_USERNAME' $false }
