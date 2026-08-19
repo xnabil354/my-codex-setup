@@ -17,6 +17,7 @@ To change only API keys later, run `Manage-CodexCredentials.cmd`. It does not in
 ## What the installer does
 
 - Detects Codex CLI and the OpenAI/Codex VS Code extension independently.
+- Detects VS Code IDE itself. If it exists, asks whether to update to the latest version (`Y`/`N`); if missing, installs the latest stable VS Code using `winget` or the official signed User installer.
 - Asks whether each detected component should be updated.
 - Installs reusable skills and plugins from the bundle.
 - Preserves unrelated project trust and configuration sections.

@@ -116,6 +116,8 @@ try {
     $nodeBlock = [regex]::Match($installerText, '(?s)function Ensure-NodeNpm \{.*?(?=function Read-Secret)').Value
     Assert-That ($nodeBlock.Contains("Ask 'Node.js sudah ada. Update Node.js ke LTS terbaru?' 'N'")) 'existing Node.js/npm asks before update with N default'
     Assert-That ($nodeBlock -match '(?s)\$update -eq ''Y''.*?Install-NodeFallback') 'Node.js fallback update is inside Y branch'
+    Assert-That ($installerText.Contains('function Ensure-VsCode') -and $installerText.Contains("Ask 'VS Code sudah ada. Update VS Code ke latest?' 'N'")) 'VS Code detection and latest-update prompt'
+    Assert-That ($installerText.Contains('Microsoft.VisualStudioCode') -and $installerText.Contains('update.code.visualstudio.com/latest/win32-x64-user/stable') -and $installerText.Contains('Get-AuthenticodeSignature')) 'VS Code install fallback and signature verification'
     Assert-That ($installerText.Contains('Ctrl+V') -and $installerText.Contains('Ctrl+Shift+V') -and $installerText.Contains('Shift+Insert') -and $installerText.Contains('Get-Clipboard')) 'installer API-key paste shortcuts and clipboard fallback'
     Assert-That (-not $installerText.Contains('function Select-Credentials')) 'installer has no credential replacement menu'
     $credentialManager = Get-Content -LiteralPath (Join-Path $bundleRoot 'Manage-CodexCredentials.ps1') -Raw

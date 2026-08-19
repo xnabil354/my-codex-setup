@@ -107,6 +107,27 @@ function Install-NodeFallback {
         if (Test-Path -LiteralPath $tempMsi) { Remove-Item -LiteralPath $tempMsi -Force -ErrorAction SilentlyContinue }
     }
 }
+function Install-VsCodeFallback {
+    $tempExe = Join-Path ([IO.Path]::GetTempPath()) ("vscode-user-" + [guid]::NewGuid().ToString('N') + '.exe')
+    try {
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+        Info 'winget tidak tersedia/gagal. Mengambil VS Code User setup resmi...'
+        Invoke-WebRequest -UseBasicParsing -Uri 'https://update.code.visualstudio.com/latest/win32-x64-user/stable' -OutFile $tempExe
+        $signature = Get-AuthenticodeSignature -FilePath $tempExe
+        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?i)Microsoft') {
+            throw 'Tanda tangan digital installer VS Code tidak valid.'
+        }
+        $installer = Start-Process -FilePath $tempExe -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MERGETASKS=!runcode') -Wait -PassThru -WindowStyle Hidden
+        if ($installer.ExitCode -ne 0) { throw "Installer VS Code gagal (exit code $($installer.ExitCode))." }
+    }
+    catch {
+        throw "VS Code fallback gagal: $($_.Exception.Message)"
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempExe) { Remove-Item -LiteralPath $tempExe -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Ensure-NodeNpm {
     Refresh-Path
     $node = Find-ExecutableCommand 'node'
@@ -290,10 +311,19 @@ function Find-CodeCommand {
         $command = Find-ExecutableCommand $name
         if ($command) { return $command }
     }
-    foreach ($path in @(
-            (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'),
-            (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd')
-        )) {
+    $paths = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd')
+    )
+    if ($env:ProgramFiles) {
+        $paths += Join-Path $env:ProgramFiles 'Microsoft VS Code\bin\code.cmd'
+        $paths += Join-Path $env:ProgramFiles 'Microsoft VS Code Insiders\bin\code-insiders.cmd'
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $paths += Join-Path ${env:ProgramFiles(x86)} 'Microsoft VS Code\bin\code.cmd'
+        $paths += Join-Path ${env:ProgramFiles(x86)} 'Microsoft VS Code Insiders\bin\code-insiders.cmd'
+    }
+    foreach ($path in $paths) {
         if (Test-Path -LiteralPath $path) {
             $command = Get-Command $path -ErrorAction SilentlyContinue
             if ($command) { return $command }
@@ -366,6 +396,84 @@ function Get-VsCodeInfo {
         ExtensionVersion = $extensionVersion
     }
 }
+function Ensure-VsCode {
+    Refresh-Path
+    $code = Find-CodeCommand
+    if ($code) {
+        $version = First-Version (Run $code.Source @('--version')).Output
+        Info "VS Code sudah tersedia: $(if ($version) { $version } else { 'versi tidak terbaca' })"
+        $update = if ($SkipUpdates) { 'N' } else { Ask 'VS Code sudah ada. Update VS Code ke latest?' 'N' }
+        if ($update -eq 'Y') {
+            if ($DryRun) {
+                Info 'Dry-run: update VS Code dilewati.'
+                return $true
+            }
+            $updated = $false
+            $updateFailed = $false
+            $winget = Find-ExecutableCommand 'winget'
+            if ($winget) {
+                Info 'Mengupdate VS Code via winget...'
+                try {
+                    $result = Run $winget.Source @('upgrade', '--id', 'Microsoft.VisualStudioCode', '--exact', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity')
+                    $updated = $result.ExitCode -eq 0
+                }
+                catch { Warn 'Update VS Code via winget gagal; mencoba installer resmi.' }
+            }
+            if (-not $updated) {
+                Warn 'Update VS Code via winget tidak berhasil; memakai installer resmi.'
+                try { Install-VsCodeFallback; $updated = $true }
+                catch { $updateFailed = $true; Warn "Update VS Code gagal; versi yang sudah ada dipertahankan: $($_.Exception.Message)" }
+            }
+            Refresh-Path
+            if (-not (Find-CodeCommand)) {
+                throw 'Update VS Code selesai tetapi code command belum masuk PATH. Tutup PowerShell, buka kembali, lalu jalankan installer lagi.'
+            }
+            if ($updateFailed) { Info 'VS Code tetap memakai versi yang sudah ada.' }
+            else { Good 'VS Code siap setelah pemeriksaan/update.' }
+        }
+        elseif ($SkipUpdates) {
+            Info 'SkipUpdates aktif; update VS Code dilewati.'
+        }
+        else {
+            Info 'VS Code sudah ada; update dilewati.'
+        }
+        return $true
+    }
+    if ($DryRun) {
+        Warn 'Dry-run: VS Code tidak ditemukan; instalasi VS Code terbaru dilewati.'
+        return $false
+    }
+
+    $installed = $false
+    $winget = Find-ExecutableCommand 'winget'
+    if ($winget) {
+        Info 'VS Code tidak ditemukan. Menginstal VS Code terbaru via winget...'
+        try {
+            $result = Run $winget.Source @('install', '--id', 'Microsoft.VisualStudioCode', '--exact', '--source', 'winget', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity')
+            if ($result.ExitCode -eq 0) {
+                Refresh-Path
+                $installed = [bool](Find-CodeCommand)
+            }
+            if (-not $installed) { Warn 'Instalasi VS Code via winget belum menghasilkan code command; mencoba installer resmi.' }
+        }
+        catch { Warn 'Instalasi VS Code via winget gagal; mencoba installer resmi.' }
+    }
+    else {
+        Warn 'winget tidak tersedia; memakai installer resmi VS Code.'
+    }
+
+    if (-not $installed) {
+        Install-VsCodeFallback
+        Refresh-Path
+    }
+    $code = Find-CodeCommand
+    if (-not $code) {
+        throw 'VS Code terpasang tetapi code command belum masuk PATH. Tutup PowerShell, buka kembali, lalu jalankan installer lagi.'
+    }
+    Good "VS Code siap: $($code.Source)"
+    return $true
+}
+
 function Get-Preserved([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
     $keep = New-Object 'System.Collections.Generic.List[string]'
@@ -681,6 +789,7 @@ function Verify-Setup {
 if (-not (Test-Path -LiteralPath $Snapshot)) { throw 'Snapshot tidak ditemukan. Jalankan Build-CodexBundle.ps1 dahulu.' }
 Write-Host '=== Codex Vibe Setup ===' -ForegroundColor White
 [void](Ensure-NodeNpm)
+[void](Ensure-VsCode)
 $cli = Get-CliInfo
 $vs = Get-VsCodeInfo
 if ($cli.Found) { Info "Codex CLI terdeteksi: $($cli.Path)" } else { Warn 'Codex CLI tidak terdeteksi.' }
